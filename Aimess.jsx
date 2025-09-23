@@ -25,6 +25,7 @@ const ConstrainedFruitVoting = () => {
   const [selectedUser, setSelectedUser] = useState('User 1');
   const [optimalPlan, setOptimalPlan] = useState({});
   const [constraintStatus, setConstraintStatus] = useState({ violations: [], summary: '' });
+  const [showDebugInfo, setShowDebugInfo] = useState(false);
 
   // Get available fruits for a specific user/day/meal based on constraints
   const getAvailableFruits = (targetUser, targetDay, targetMeal) => {
@@ -53,13 +54,23 @@ const ConstrainedFruitVoting = () => {
     // Get previous day's selections
     const dayIndex = days.indexOf(targetDay);
     const previousDay = dayIndex > 0 ? days[dayIndex - 1] : null;
-    const previousDayFruits = [];
+    const nextDay = dayIndex < days.length - 1 ? days[dayIndex + 1] : null;
+    const adjacentDayFruits = [];
     
     if (previousDay) {
       meals.forEach(meal => {
         const prevFruit = users[targetUser]?.[previousDay]?.[meal];
         if (prevFruit && prevFruit !== '') {
-          previousDayFruits.push(prevFruit);
+          adjacentDayFruits.push(prevFruit);
+        }
+      });
+    }
+    
+    if (nextDay) {
+      meals.forEach(meal => {
+        const nextFruit = users[targetUser]?.[nextDay]?.[meal];
+        if (nextFruit && nextFruit !== '') {
+          adjacentDayFruits.push(nextFruit);
         }
       });
     }
@@ -71,8 +82,8 @@ const ConstrainedFruitVoting = () => {
         return false;
       }
       
-      // Constraint 1b: No same fruit on consecutive days
-      if (previousDayFruits.includes(fruit)) {
+      // Constraint 1b: No same fruit on adjacent days
+      if (adjacentDayFruits.includes(fruit)) {
         return false;
       }
       
@@ -285,6 +296,31 @@ const ConstrainedFruitVoting = () => {
     }
   };
 
+  const resetAllVotes = () => {
+    if (window.confirm('Are you sure you want to clear all user votes?')) {
+      setUsers(initializeUsers());
+      setSelectedUser('User 1');
+    }
+  };
+
+  const quickFillRandom = () => {
+    const newUsers = { ...users };
+    
+    Object.keys(newUsers).forEach(userName => {
+      days.forEach(day => {
+        meals.forEach(meal => {
+          const availableFruits = getAvailableFruits(userName, day, meal);
+          if (availableFruits.length > 0) {
+            const randomFruit = availableFruits[Math.floor(Math.random() * availableFruits.length)];
+            newUsers[userName][day][meal] = randomFruit;
+          }
+        });
+      });
+    });
+    
+    setUsers(newUsers);
+  };
+
   const fruitEmojis = {
     'Apple': '🍎', 
     'Banana': '🍌', 
@@ -322,6 +358,43 @@ const ConstrainedFruitVoting = () => {
 
   const chartData = getChartData();
 
+  // Calculate total votes cast
+  const getTotalVotes = () => {
+    let total = 0;
+    Object.values(users).forEach(user => {
+      days.forEach(day => {
+        meals.forEach(meal => {
+          if (user[day]?.[meal] && user[day][meal] !== '') {
+            total++;
+          }
+        });
+      });
+    });
+    return total;
+  };
+
+  const calculateSatisfactionScore = () => {
+    let totalPossibleVotes = 0;
+    let satisfiedVotes = 0;
+    
+    Object.values(users).forEach(user => {
+      days.forEach(day => {
+        meals.forEach(meal => {
+          const userVote = user[day]?.[meal];
+          if (userVote && userVote !== '') {
+            totalPossibleVotes++;
+            const finalSelection = optimalPlan[day]?.[meal]?.fruit;
+            if (finalSelection === userVote) {
+              satisfiedVotes++;
+            }
+          }
+        });
+      });
+    });
+    
+    return totalPossibleVotes > 0 ? Math.round((satisfiedVotes / totalPossibleVotes) * 100) : 0;
+  };
+
   return (
     <div className="p-6 max-w-7xl mx-auto bg-white">
       <h1 className="text-3xl font-bold text-center mb-8 text-gray-800">
@@ -330,30 +403,58 @@ const ConstrainedFruitVoting = () => {
       
       {/* System Status */}
       <div className="bg-blue-50 p-4 rounded-lg mb-6 border border-blue-300">
-        <h2 className="text-xl font-semibold mb-2 text-blue-800">📋 System Rules:</h2>
-        <div className="grid md:grid-cols-2 gap-4 text-sm">
+        <h2 className="text-xl font-semibold mb-2 text-blue-800">📋 System Rules & Status:</h2>
+        <div className="grid md:grid-cols-3 gap-4 text-sm">
           <div>
-            <h3 className="font-semibold text-blue-700">Constraints:</h3>
+            <h3 className="font-semibold text-blue-700 mb-2">Constraints:</h3>
             <ul className="list-disc list-inside text-blue-600 space-y-1">
               <li><strong>No Same Day Repeat:</strong> Same fruit cannot be selected for both lunch and dinner on same day</li>
               <li><strong>No Consecutive Days:</strong> Same fruit cannot appear on consecutive days</li>
               <li><strong>Max 2 Times Per Week:</strong> Each fruit can only be selected maximum twice throughout the week</li>
-              <li><strong>10 Available Fruits:</strong> Apple, Banana, Orange, Mango, Grapes, Strawberry, Cherry, Peach, Pear, Kiwi</li>
             </ul>
           </div>
           <div>
-            <h3 className="font-semibold text-blue-700">Current Status:</h3>
-            <p className="text-blue-600">{constraintStatus.summary}</p>
-            <div className="flex gap-2 mt-2">
+            <h3 className="font-semibold text-blue-700 mb-2">Current Status:</h3>
+            <p className="text-blue-600 mb-2">{constraintStatus.summary}</p>
+            <div className="space-y-1">
+              <div className="text-sm text-gray-600">Total Votes: {getTotalVotes()}</div>
+              <div className="text-sm text-gray-600">Satisfaction Score: {calculateSatisfactionScore()}%</div>
+            </div>
+          </div>
+          <div>
+            <h3 className="font-semibold text-blue-700 mb-2">Actions:</h3>
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <button 
+                  onClick={addNewUser}
+                  className="bg-green-500 text-white px-3 py-1 rounded text-sm hover:bg-green-600 transition-colors"
+                >
+                  ➕ Add User
+                </button>
+                <span className="bg-blue-200 px-2 py-1 rounded text-blue-800 text-sm">
+                  Users: {Object.keys(users).length}
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <button 
+                  onClick={quickFillRandom}
+                  className="bg-purple-500 text-white px-3 py-1 rounded text-sm hover:bg-purple-600 transition-colors"
+                >
+                  🎲 Quick Fill
+                </button>
+                <button 
+                  onClick={resetAllVotes}
+                  className="bg-red-500 text-white px-3 py-1 rounded text-sm hover:bg-red-600 transition-colors"
+                >
+                  🗑️ Reset All
+                </button>
+              </div>
               <button 
-                onClick={addNewUser}
-                className="bg-green-500 text-white px-3 py-1 rounded text-sm hover:bg-green-600"
+                onClick={() => setShowDebugInfo(!showDebugInfo)}
+                className="bg-gray-500 text-white px-3 py-1 rounded text-sm hover:bg-gray-600 transition-colors"
               >
-                ➕ Add User
+                {showDebugInfo ? '👁️ Hide Debug' : '🔍 Show Debug'}
               </button>
-              <span className="bg-blue-200 px-2 py-1 rounded text-blue-800 text-sm">
-                Users: {Object.keys(users).length}
-              </span>
             </div>
           </div>
         </div>
@@ -371,7 +472,7 @@ const ConstrainedFruitVoting = () => {
                   onClick={() => setSelectedUser(user)}
                   className={`flex-1 p-2 rounded text-sm transition-colors ${
                     selectedUser === user 
-                      ? 'bg-blue-500 text-white' 
+                      ? 'bg-blue-500 text-white shadow-lg' 
                       : 'bg-gray-100 hover:bg-gray-200'
                   }`}
                 >
@@ -380,7 +481,7 @@ const ConstrainedFruitVoting = () => {
                 {Object.keys(users).length > 1 && (
                   <button
                     onClick={() => removeUser(user)}
-                    className="bg-red-500 text-white px-2 py-1 rounded text-xs hover:bg-red-600"
+                    className="bg-red-500 text-white px-2 py-1 rounded text-xs hover:bg-red-600 transition-colors"
                   >
                     ✕
                   </button>
@@ -397,7 +498,7 @@ const ConstrainedFruitVoting = () => {
           </h3>
           <div className="grid md:grid-cols-3 gap-4">
             {days.map(day => (
-              <div key={day} className="border rounded-lg p-3 bg-gray-50">
+              <div key={day} className="border rounded-lg p-3 bg-gray-50 shadow-sm">
                 <h4 className="font-bold text-center mb-3 text-gray-700">{day}</h4>
                 
                 {meals.map(meal => (
@@ -408,7 +509,7 @@ const ConstrainedFruitVoting = () => {
                     <select
                       value={users[selectedUser]?.[day]?.[meal] || ''}
                       onChange={(e) => updateUserSelection(selectedUser, day, meal, e.target.value)}
-                      className="w-full p-2 border rounded bg-white text-sm hover:shadow-sm focus:ring-2 focus:ring-blue-300"
+                      className="w-full p-2 border rounded bg-white text-sm hover:shadow-sm focus:ring-2 focus:ring-blue-300 transition-all"
                     >
                       <option value="">-- Select Fruit --</option>
                       {getAvailableFruits(selectedUser, day, meal).map(fruit => (
@@ -430,13 +531,13 @@ const ConstrainedFruitVoting = () => {
       </div>
 
       {/* Optimal Meal Plan - Main Result */}
-      <div className="bg-green-50 p-6 rounded-lg mb-8 border-2 border-green-300">
+      <div className="bg-green-50 p-6 rounded-lg mb-8 border-2 border-green-300 shadow-lg">
         <h2 className="text-2xl font-bold mb-4 text-green-800 text-center">
           🏆 OPTIMAL WEEKLY MEAL PLAN
         </h2>
         <div className="grid md:grid-cols-3 gap-4">
           {days.map(day => (
-            <div key={day} className="bg-white p-4 rounded-lg shadow-sm">
+            <div key={day} className="bg-white p-4 rounded-lg shadow-sm border">
               <h3 className="font-bold text-center mb-3 text-green-700 text-lg">{day}</h3>
               
               {meals.map(meal => {
@@ -444,9 +545,9 @@ const ConstrainedFruitVoting = () => {
                 const isViolation = selection?.hasViolation;
                 
                 return (
-                  <div key={meal} className={`mb-2 p-3 rounded-lg ${
+                  <div key={meal} className={`mb-2 p-3 rounded-lg transition-all ${
                     !selection?.fruit ? 'bg-gray-100 border border-gray-300' :
-                    isViolation ? 'bg-yellow-100 border border-yellow-400' : 'bg-green-100'
+                    isViolation ? 'bg-yellow-100 border border-yellow-400 shadow-sm' : 'bg-green-100 shadow-sm'
                   }`}>
                     <div className="flex items-center justify-between">
                       <div className="font-semibold text-sm text-gray-700">{meal}:</div>
@@ -480,10 +581,25 @@ const ConstrainedFruitVoting = () => {
         </div>
       </div>
 
+      {/* Debug Information */}
+      {showDebugInfo && constraintStatus.violations.length > 0 && (
+        <div className="bg-yellow-50 p-4 rounded-lg mb-6 border border-yellow-300">
+          <h3 className="text-lg font-semibold mb-3 text-yellow-800">🐛 Constraint Violations Debug</h3>
+          <div className="space-y-2">
+            {constraintStatus.violations.map((violation, index) => (
+              <div key={index} className="bg-white p-2 rounded border border-yellow-200 text-sm">
+                <strong>{violation.day} {violation.meal}:</strong> {violation.fruit} 
+                ({violation.votes} votes) - blocked by {violation.reason}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Analytics */}
       <div className="grid lg:grid-cols-2 gap-6 mb-6">
         {/* Fruit Usage Chart */}
-        <div className="bg-gray-50 p-4 rounded-lg">
+        <div className="bg-gray-50 p-4 rounded-lg shadow-sm">
           <h3 className="text-xl font-semibold mb-3 text-gray-800">📊 Fruit Usage in Final Plan</h3>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={chartData}>
@@ -498,9 +614,9 @@ const ConstrainedFruitVoting = () => {
         </div>
 
         {/* Usage Statistics */}
-        <div className="bg-gray-50 p-4 rounded-lg">
+        <div className="bg-gray-50 p-4 rounded-lg shadow-sm">
           <h3 className="text-xl font-semibold mb-3 text-gray-800">🎯 Constraint Status</h3>
-          <div className="space-y-2">
+          <div className="space-y-2 max-h-72 overflow-y-auto">
             {fruits.map(fruit => {
               const usage = constraintStatus.fruitUsage?.[fruit] || 0;
               const color = usage > 2 ? 'bg-red-200 border-red-400' : 
@@ -508,7 +624,7 @@ const ConstrainedFruitVoting = () => {
                            usage === 1 ? 'bg-green-200 border-green-400' : 'bg-gray-200';
               
               return (
-                <div key={fruit} className={`flex items-center justify-between p-2 rounded border ${color}`}>
+                <div key={fruit} className={`flex items-center justify-between p-2 rounded border transition-colors ${color}`}>
                   <span className="text-sm font-medium">
                     {fruitEmojis[fruit]} {fruit}
                   </span>
